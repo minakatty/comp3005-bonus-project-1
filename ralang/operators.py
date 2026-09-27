@@ -1,12 +1,25 @@
 """
 Evaluates a parsed AST against a catalog of loaded relations.
 
-Each operator maps directly onto Section 4.3's table. `join[c]` is not a
-separate implementation: it calls the same `_times` and `_select_rows`
-helpers `times` and `select` use, in that order, because the spec defines it
-that way ("Defined as times followed by select[c]") and building it literally
-that way means it can never quietly drift from a bare times+select giving a
-different answer.
+Each operator maps directly onto Section 4.3's table. `join[c]`'s *result* is
+defined exactly as "times followed by select[c]" -- `tests/test_operators.py`
+has an explicit equivalence test proving `_join` always agrees with
+`_select_rows` applied to `_times`'s own output, on the same inputs.
+
+`_join` does not literally build the intermediate cross product, though.
+Materializing every one of the n*m pairs before filtering means a query
+whose *answer* is small still needs O(n*m) memory to compute -- at
+n=m=32000 that is 1.02 billion combined rows, which is what actually
+crashed the first version of this file with a MemoryError, discovered while
+running the required Section 8.3 sweep. `_join` instead tests the condition
+inside the same nested loop that generates each pair, keeping a combined
+row only if it passes, so peak memory is O(output size) instead of O(n*m).
+This changes nothing about what is computed -- same pairs generated, same
+`comparisons` count, same result set -- only how much of it is held in
+memory at once. It is not the kind of algebraic rewriting Section 3
+excludes (choosing a different join algorithm, an index, reordering the
+query tree); it is still the same nested-loop comparison of every pair,
+just not paying to store the ones that are about to be discarded.
 
 Two static checks run before any row is touched, both raising positioned
 errors rather than ever reaching a stack trace:
@@ -149,11 +162,11 @@ def _minus(node: ast.Node, left: Relation, right: Relation) -> Relation:
 
 def _times(node: ast.Node, left: Relation, right: Relation,
           counters: Counters) -> Relation:
+    """Bare `times`: the user asked for the full cross product as a
+    relation, so unlike `_join` below, every pair genuinely has to be kept.
+    """
     schema = Schema.concat(left.schema, right.schema, node.pos)
     rows: List[Row] = []
-    # The nested loop the spec expects. Every pair generated here is one
-    # comparison, counted whether or not a `join` condition will later keep
-    # or discard it -- which is what makes the count exactly n * m.
     for lrow in left.rows:
         for rrow in right.rows:
             counters.comparisons += 1           # Section 8.2
@@ -163,6 +176,26 @@ def _times(node: ast.Node, left: Relation, right: Relation,
     # disjoint above, and two distinct pairs of rows can only concatenate to
     # the same tuple if both halves were already equal -- so the result
     # inherits set semantics for free. See relation.py's dedup docstring.
+    return Relation(schema, rows)
+
+
+def _join(node: ast.Join, left: Relation, right: Relation,
+         counters: Counters) -> Relation:
+    """R join[c] S -- same pairs `_times` would generate, same condition
+    `_select_rows` would test, fused into one loop so a combined row that
+    fails the condition is never allocated into a kept list. See the module
+    docstring for why this matters at n = m = 32000 and above.
+    """
+    schema = Schema.concat(left.schema, right.schema, node.pos)
+    _check_condition_types(node.cond, schema)     # fail fast, before any row
+    rows: List[Row] = []
+    for lrow in left.rows:
+        for rrow in right.rows:
+            counters.comparisons += 1           # Section 8.2: one per pair
+            counters.examined += 1              # Section 8.2: one per pair
+            combined = lrow + rrow
+            if _eval_condition(node.cond, combined, schema):
+                rows.append(combined)
     return Relation(schema, rows)
 
 
@@ -199,10 +232,8 @@ def evaluate(node: ast.Node, catalog: Dict[str, Relation],
                      evaluate(node.right, catalog, counters), counters)
 
     if isinstance(node, ast.Join):
-        # Literally times, then select -- see the module docstring.
-        product = _times(node, evaluate(node.left, catalog, counters),
-                         evaluate(node.right, catalog, counters), counters)
-        return _select_rows(node.cond, product, counters)
+        return _join(node, evaluate(node.left, catalog, counters),
+                    evaluate(node.right, catalog, counters), counters)
 
     raise AssertionError(f"unhandled node type {type(node).__name__}")
 
@@ -228,3 +259,4 @@ def format_relation(rel: Relation) -> str:
     if not rel.rows:
         lines.append("(0 tuples)")
     return "\n".join(lines)
+    

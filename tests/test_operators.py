@@ -187,6 +187,34 @@ class CatalogLoading(unittest.TestCase):
             parse_catalog("R (a) = {\n1\n}\nR (a) = {\n2\n}\n")
 
 
+class JoinEqualsTimesThenSelect(unittest.TestCase):
+    """join[c] is *defined* as times followed by select[c] (Section 4.3).
+    It isn't *implemented* that way -- see operators.py's module docstring --
+    so this proves the two never quietly disagree."""
+
+    def _check(self, catalog_source, left_query, cond, right_query):
+        catalog = parse_catalog(catalog_source)
+
+        join_rel = evaluate(
+            parse_query(f"{left_query} join[{cond}] {right_query}"),
+            catalog, Counters())
+        composed_rel = evaluate(
+            parse_query(f"select[{cond}]({left_query} times {right_query})"),
+            catalog, Counters())
+
+        self.assertEqual(sorted(join_rel.rows), sorted(composed_rel.rows))
+        self.assertEqual(join_rel.schema.names(), composed_rel.schema.names())
+
+    def test_equivalence_on_emp_dept(self):
+        self._check(EMP_DEPT, "Emp", "Emp.DID=Dept.DID", "Dept")
+
+    def test_equivalence_on_self_join(self):
+        self._check(EMP_DEPT, "rename[E2](Emp)", "Emp.MgrID=E2.EID", "Emp")
+
+    def test_equivalence_with_no_matches(self):
+        self._check(SETS, "R", "R.a=T.a and R.b=999", "T")
+
+
 class Instrumentation(unittest.TestCase):
     """Sanity checks on the Section 8.2 counters, ahead of the full sweep."""
 
