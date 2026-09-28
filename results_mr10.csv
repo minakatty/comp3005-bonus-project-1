@@ -1,0 +1,2 @@
+n,m,join_comparisons,join_time_s,join_output_tuples,select_examined,select_time_s,project_time_s
+4000,4000,16000000,19.237036,39977,4000,0.003188,0.00159
