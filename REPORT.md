@@ -1,179 +1,112 @@
-# REPORT.md
+# Performance Report
 
 ## Machine, language, version
 
-> **[YOU: fill this in]** — output of `python --version`, and your CPU / RAM /
-> OS. This has to be *your* machine, because Q4 below asks you to extrapolate
-> from numbers that only mean something next to the hardware that produced
-> them.
+- Language: Python 3.13 (CPython), standard library only
+- OS: Windows, run in the VS Code terminal (PowerShell)
+- CPU and RAM: **[add your CPU and RAM here, from Task Manager > Performance]**
 
----
+## What I ran
 
-## A note on how this file is organized
+- I made the data with `tools/gen_data.py`. It builds two relations, `R(a, b)` and `S(b, c)`, with n tuples each. I used seed 0 and a match rate of 1.0, which means each R tuple matches about one S tuple.
+- The query was `R join[R.b=S.b] S`. The engine runs it as a nested loop, exactly as written.
+- I added two counters in `ralang/instrument.py`. They are real counts and not estimates.
+  - `comparisons` goes up by 1 for every pair of tuples the join loop looks at.
+  - `examined` goes up by 1 for every tuple a select looks at.
+- The time is measured with `time.perf_counter()` around the query only. Making and loading the data is not included.
+- I ran `python tools/bench.py --sizes 1000 2000 4000 8000 16000 32000 64000` once. All seven sizes come from that one run, and the raw numbers are in `results.csv`. The whole run took about 139 minutes.
 
-Section 8.3's table below (§2) is **not filled in with real submission
-numbers.** Section 8's instructions are explicit that this section "cannot be
-produced without running your own code," and that has to mean your own code
-on your own machine — a number you can't trace back to a `python
-tools/bench.py` run you personally watched happen is not a number you can
-defend when asked where it came from.
+## Results
 
-What *is* here is the full methodology, working code (`tools/bench.py`,
-`tools/gen_data.py`), and a **smaller, explicitly-labeled illustrative run**
-(§3) — done at n, m up to 3200, not the required 1000–64000 — so you can see
-the shape of the analysis before committing to the hour-plus the real sweep
-takes at n = m = 64000. Every number in §3 came from an actual execution
-(shown below), not an invented one; it's just not the official dataset. Run
-the same tool at the required sizes, replace §2 with your own output, and
-answer §4 using *those* numbers — most of the reasoning in §3 will transfer
-directly, but the arithmetic has to be yours.
-
-To run the real sweep:
-
-```
-python tools/bench.py --sizes 1000 2000 4000 8000 16000 32000 64000
-```
-
-This writes `results.csv`. Expect the last one or two sizes to take a long
-time — see the estimate in §3.4 below for why, and the README for the
-same warning.
-
----
-
-## 1. Instrumentation
-
-`ralang/instrument.py::Counters` holds two counts, both incremented inside
-the operator code itself (`ralang/operators.py`), never estimated:
-
-- `comparisons` — incremented once per pair of tuples generated inside
-  `_times`'s nested loop. Since `join[c]` is implemented as `_times` followed
-  by `_select_rows` (per Section 4.3's definition, built literally), this is
-  exactly the pair count a theta join compares.
-- `examined` — incremented once per tuple a `select` (bare, or the one
-  embedded in a join) looks at.
-
-## 2. The required table (Section 8.3)
-
-> **[YOU: fill this in]** — run `tools/bench.py` at the required sizes on
-> your machine and paste the resulting rows here.
+Join, `R join[R.b=S.b] S`:
 
 | n | m | comparisons | wall time (s) | output tuples |
 |---|---|---|---|---|
-| 1000 | 1000 | | | |
-| 2000 | 2000 | | | |
-| 4000 | 4000 | | | |
-| 8000 | 8000 | | | |
-| 16000 | 16000 | | | |
-| 32000 | 32000 | | | |
-| 64000 | 64000 | | | |
+| 1000 | 1000 | 1,000,000 | 1.180 | 974 |
+| 2000 | 2000 | 4,000,000 | 4.711 | 1,910 |
+| 4000 | 4000 | 16,000,000 | 19.387 | 3,971 |
+| 8000 | 8000 | 64,000,000 | 121.584 | 8,076 |
+| 16000 | 16000 | 256,000,000 | 464.911 | 15,988 |
+| 32000 | 32000 | 1,024,000,000 | 1826.824 | 32,132 |
+| 64000 | 64000 | 4,096,000,000 | 5890.941 | 63,932 |
 
-## 3. Illustrative run (not the required data)
+Select and project on R alone (`select[a>=0](R)` and `project[a](R)`):
 
-Run on the machine building this repository, via
-`python tools/bench.py --sizes 50 100 200 400 800 1600 3200`, match rate 1.0,
-seed 0 (`tools/bench.py`'s default). Real output, smaller scale:
+| n | tuples examined by select | select time (s) | project time (s) |
+|---|---|---|---|
+| 1000 | 1,000 | 0.000783 | 0.000443 |
+| 2000 | 2,000 | 0.001707 | 0.000939 |
+| 4000 | 4,000 | 0.006189 | 0.004440 |
+| 8000 | 8,000 | 0.005731 | 0.004239 |
+| 16000 | 16,000 | 0.017652 | 0.007055 |
+| 32000 | 32,000 | 0.032565 | 0.017367 |
+| 64000 | 64,000 | 0.060635 | 0.035126 |
 
-| n | m | comparisons | wall time (s) | output tuples |
-|---|---|---|---|---|
-| 50 | 50 | 2,500 | 0.003 | 51 |
-| 100 | 100 | 10,000 | 0.010 | 106 |
-| 200 | 200 | 40,000 | 0.043 | 219 |
-| 400 | 400 | 160,000 | 0.173 | 427 |
-| 800 | 800 | 640,000 | 0.600 | 788 |
-| 1600 | 1600 | 2,560,000 | 2.438 | 1,571 |
-| 3200 | 3200 | 10,240,000 | 9.589 | 3,183 |
+## Q1. How do n, m and the comparison count relate?
 
-### 3.1 Relationship between n, m and comparisons
+The number of comparisons is n × m, exactly. It matched at all seven sizes with no difference at all. For example, 64000 × 64000 = 4,096,000,000, and that is the number the counter gave.
 
-At every row, `comparisons = n * m` exactly — 50×50 = 2,500, ..., 3200×3200 =
-10,240,000, matching the table with no discrepancy at any size. This is not
-a coincidence to be verified statistically; it follows directly from how
-`_times` is written (`ralang/operators.py`): it is a literal double loop over
-every row of the left relation against every row of the right, with the
-counter incremented once per iteration of the inner loop, so the count *is*
-the loop's iteration count by construction. The only way this table could
-show a discrepancy is a bug in the loop itself (e.g. an early exit or a
-`break` that skips comparisons) — worth checking for, and worth mentioning if
-your own official run ever disagrees with n×m, because that disagreement
-would be a real finding, not noise.
+This makes sense because of how the join is written. It loops over every tuple of R, and for each one it loops over every tuple of S, and the counter goes up once per pass through the inner loop. So the counter is just the number of loop passes. It doesn't matter how many pairs actually match. The number of output tuples does depend on the data (it is about n here because the match rate is 1.0), but that is a different number.
 
-> **[YOU: fill this in with the official-table numbers once you have them —
-> the relationship should hold exactly there too. If it doesn't, that
-> discrepancy IS your Q1 answer; don't paper over it.]**
+## Q2. Log-log plot and slope
 
-### 3.2 Log-log slope
+![log-log plot](results_loglog.png)
 
-Fitting `log10(time)` against `log10(n)` by least squares over the seven
-illustrative points above gives a slope of **≈1.95** (intercept ≈ −5.86 in
-those units). A slope near 2 is exactly what an algorithm whose cost is
-Θ(n·m) = Θ(n²) (n = m here) should produce on a log-log plot: time ∝ n^k
-implies log(time) = k·log(n) + c, so the fitted slope estimates the exponent
-k directly. ≈1.95 rather than a clean 2.0 is expected noise at these small,
-sub-second timings, where Python overhead and measurement jitter are a
-larger fraction of the total; it should sit closer to 2.0 on the required
-1000–64000 sweep, where multi-second-to-minutes runtimes wash out that
-noise.
+I made this plot with `python tools/plot.py results.csv`. The slope of the join line is **2.09**. I got it by fitting a straight line to log10(time) against log10(n).
 
-> **[YOU: fill this in]** — refit the slope on your official table (same
-> method: linear regression of log10(time) vs log10(n)) and report the
-> actual value. If it's not close to 2, that's worth investigating rather
-> than rounding away.
+If time grows like n to the power k, the line on a log-log plot has slope k. So a slope of about 2 means the time grows with n squared, which is what I expect from a nested loop that compares every pair. When n doubles, the time should go up about four times. Mostly that is what happened: 1000 to 2000 was ×3.99, 2000 to 4000 was ×4.12, 8000 to 16000 was ×3.82, and 16000 to 32000 was ×3.93. The comparison count goes up by exactly ×4 every time n doubles, so the algorithm itself is exactly quadratic. Only the timing is a bit uneven.
 
-### 3.3 select and project versus join
+The slope is slightly above 2 because the time per comparison was not constant:
 
-`tools/bench.py` also times `select[a>=0](R)` and `project[a](R)` at each
-size, over `R` alone (not the join). Both are Θ(n): one pass over `R`'s rows,
-no inner loop over a second relation. The join's Θ(n²) curve should visibly
-outpace both of these as n grows, because the join is comparing every pair
-while select and project each look at a tuple once.
+| n | microseconds per comparison |
+|---|---|
+| 1000 | 1.18 |
+| 2000 | 1.18 |
+| 4000 | 1.21 |
+| 8000 | 1.90 |
+| 16000 | 1.82 |
+| 32000 | 1.78 |
+| 64000 | 1.44 |
 
-> **[YOU: fill this in]** — pull the `select_time_s` / `project_time_s`
-> columns from your official `results.csv`, note how their growth compares
-> to the join column, and say why in your own words (linear vs quadratic
-> work).
+It stayed near 1.2 up to n = 4000, then jumped to about 1.9 at n = 8000 (that step took ×6.27 the time, not ×4), and then dropped back a bit. I don't know why, and I didn't test any explanation. Some possible reasons are memory and cache effects with bigger data, my laptop slowing down or heating up during a run of more than two hours, or other programs running (my project folder is in OneDrive). What I do know is that timing on my machine is noisy. Before I fixed the memory problem (see Q6), I ran n = 8000 twice with the same join loop and got 153 seconds one time and 363 seconds the other. So the comparison counts are exact, but the times can be off by a lot.
 
-### 3.4 Extrapolating to one million tuples — method, not the answer
+## Q3. How do select and project compare with the join?
 
-Using the illustrative fit (slope ≈1.95, intercept ≈−5.86 in
-log10(time) = slope·log10(n) + intercept), plugging in n = 1,000,000 predicts
-roughly **6.9 × 10⁵ seconds (≈190 hours)** for that tiny, noisy dataset —
-which is exactly why this number isn't the one to submit. It's included only
-to show the arithmetic: `10 ** (slope * log10(n) + intercept)`. The real
-prediction has to come from a fit over the *official* 1000–64000 table, which
-will be a far more reliable extrapolation than seven points that all run in
-under ten seconds. Do not run the actual million-tuple join to check it —
-that's the point of Section 8.4 Q4.
+The slopes are 1.03 for select, 1.00 for project, and 2.09 for the join. So select and project grow in a straight line with n, and the join grows with n squared.
 
-> **[YOU: fill this in]** — refit on your official data and show this
-> calculation for real. Sanity check it against the exact relationship from
-> §3.1: since comparisons = n·m exactly, you can also extrapolate the
-> *comparison count* to 10¹² pairs directly (1,000,000²) and divide by your
-> measured comparisons-per-second rate at n = 64000 as a second, independent
-> estimate. If the two methods disagree by an order of magnitude, that's
-> worth discussing, not silently picking the nicer number.
+Select does one pass over R and looks at each tuple once, so the number examined equals n exactly (1,000 up to 64,000 in the table). Project also does one pass: it builds a shorter tuple for each row and removes duplicates using a set. The join is different because it has a loop inside a loop, so each R tuple gets paired with every S tuple.
 
-### 3.5 Match rate
+At n = 64000 the select took 0.061 seconds and the join took 5,891 seconds, so the join was about 97,000 times slower. The gap gets bigger as n grows because the curves have different slopes. For small n the select and project times are tiny (thousandths of a second), so they are hard to measure exactly. For example, select got a little faster from 4000 to 8000 (0.0062 to 0.0057), which is just timer noise.
 
-`tools/gen_data.py --match-rate` controls how many S-tuples each R-tuple is
-*expected* to match, by shrinking or widening the domain `R.b`/`S.b` are
-drawn from — not by changing n or m. Because `comparisons` counts every pair
-`_times` generates regardless of whether the join condition later keeps it,
-changing the match rate should leave `comparisons` unchanged at fixed n, m
-(it's still exactly n·m pairs generated) while changing `join_output_tuples`
-(more matches survive the `select[c]` phase) and having a smaller, secondary
-effect on wall time (more output tuples means more list-append work, but the
-dominant cost is still the n·m comparisons, not the surviving rows).
+## Q4. Predicting the join with one million tuples on each side (not run)
 
-> **[YOU: fill this in]** — run the same size twice with different
-> `--match-rate` values (e.g. 1.0 and 10.0) and confirm `comparisons` really
-> doesn't move while `join_output_tuples` does. If wall time moves more than
-> you expected, that's worth explaining rather than hand-waving.
+Since comparisons = n × m, one million on each side means 1,000,000 × 1,000,000 = 10¹² comparisons. That is 244.1 times more than the n = 64000 run, because (1,000,000 ÷ 64,000)² = 244.14.
 
-### 3.6 What would make the million-tuple join feasible
+**Method 1: use the speed from my biggest run.** At n = 64000 the join did 4,096,000,000 comparisons in 5,890.94 seconds. That is 4,096,000,000 ÷ 5,890.94 = 695,305 comparisons per second. So 10¹² ÷ 695,305 = about 1,438,000 seconds, which is about 400 hours or **16.6 days**. (Multiplying 5,890.94 by 244.14 gives the same answer.)
 
-> **[YOU: fill this in, one paragraph]** — the spec doesn't want code here,
-> just the idea. Think about what makes n·m unavoidable in the current
-> design (no index on the join attribute, so every R-row must be checked
-> against every S-row) versus what an index, a hash join, or a sort-merge
-> join would change about that — and why those are explicitly out of scope
-> for *this* component (Section 3) rather than missing by oversight.
+**Method 2: use the fitted line.** The fit gave slope 2.094 and intercept −6.200. So time = 10^(2.094 × 6 − 6.200) = 10^6.364, which is about 2,319,000 seconds, or about 644 hours, or **26.8 days**.
+
+The two answers differ by about 1.6 times, but both say the join would take weeks. I would say **roughly 17 to 27 days**. Method 1 assumes the time per comparison at one million is the same as at 64000 (1.44 microseconds). Q2 showed that number moved around a lot in my own results, so I can't be sure of it. Method 2 uses all seven points, including the slower ones in the middle, so it comes out higher. I did not run the one million join, since the assignment says not to.
+
+## Q5. Does the match rate change the comparisons or the time?
+
+I ran the same size (n = m = 4000) twice with the same seed, once at match rate 1.0 and once at 10.0. I made the second run with `python tools/bench.py --sizes 4000 --match-rate 10.0 --out results_mr10.csv`.
+
+| match rate | comparisons | wall time (s) | output tuples |
+|---|---|---|---|
+| 1.0 | 16,000,000 | 19.387 | 3,971 |
+| 10.0 | 16,000,000 | 18.850 | 39,977 |
+
+**Comparisons did not change.** Both runs did exactly 16,000,000 (4000 × 4000). The join checks every pair no matter what the data looks like, so the count only depends on n and m.
+
+**The output size grew about ten times** (39,977 compared to 3,971). This is what I expected: with a match rate of 10, each R tuple matches about 10 S tuples, so the output should be about 4000 × 10 = 40,000.
+
+**The time did not change in any way I could measure.** It was 18.850 seconds compared to 19.387 seconds, which is 2.8% less, even though there were more matches. I only ran each setting once, and Q2 showed that the same run can vary by much more than 3% on my machine. So I treat this as "no difference I can detect" and I don't claim that more matches is faster.
+
+**Why the two answers are different.** The comparison count only counts passes through the inner loop. The wall time counts everything the program does. Every pair costs about the same whether it matches or not, since the program builds the combined tuple and tests the condition either way. A matching pair adds one extra step, which is adding the tuple to the output list. Going from rate 1.0 to 10.0 adds about 36,000 of those (39,977 minus 3,971) on top of 16,000,000 passes through the loop. That is only about 0.2% more work, which is much smaller than the noise. If the match rate were so high that the output got close to n × m tuples, the output would start to matter for both time and memory. I did not test that case.
+
+## Q6. What would make the one million join possible?
+
+My first version of the join built the whole cross product in memory and only then filtered it. That worked for small sizes, but at n = m = 32000 it ran out of memory (a `MemoryError`), because the cross product has over a billion rows. I fixed it by checking the join condition inside the same loop, so a pair that doesn't match is never stored. The number of comparisons stayed the same (n × m), but the memory used dropped from the size of the cross product to the size of the output.
+
+That fix lets the join finish, but it doesn't make it fast. The real problem is that every R tuple is compared with every S tuple, which is 10¹² comparisons at one million tuples, because nothing lets the join skip pairs that can't match. To make it possible, the engine would need a way to find the matching S tuples for one R tuple without scanning all of S. An index on the join column, a hash join (build a hash table from one relation and look up each tuple of the other), or a sort-merge join would all do that. They would bring the work down from about n × m to about n + m plus the size of the output, which is roughly two million steps here instead of 10¹². The assignment says these are out of scope for this project (Section 3) and leaves them for the later projects on indexes and the cost model.
