@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 """
-Section 8.4 Q2: plot time against n on log-log axes, and report the fitted slope.
+Plots the results from Section 8.4 Q2.
 
-    python tools/plot.py results.csv
-
-Needs matplotlib (allowed for the report only):  pip install matplotlib
-Writes results_loglog.png next to the CSV. The slope is a least-squares fit of
-log10(time) against log10(n), computed here by hand so the number in the report
-can be traced to these few lines.
+It creates a log-log graph of time vs. n and calculates the fitted
+slope. The graph is saved as results_loglog.png.
 """
 
 import csv
