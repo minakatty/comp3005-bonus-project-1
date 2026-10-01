@@ -4,7 +4,7 @@
 
 - Language: Python 3.13 (CPython), standard library only
 - OS: Windows, run in the VS Code terminal (PowerShell)
-- CPU and RAM: **[add your CPU and RAM here, from Task Manager > Performance]**
+- CPU and RAM: 11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz, 32.0 GB RAM (3200 MT/ s)
 
 ## What I ran
 

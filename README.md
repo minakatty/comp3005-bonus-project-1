@@ -13,8 +13,7 @@ python ra.py --tree   "project[Name](select[Age>30](Employees))"
 python ra.py --run    "project[DID](Employees)" --data data/employees.ra
 ```
 
-`--run` accepts one or  more `--data` files, relations from every file are loaded
-101308840into the same catalog, so a query can join across files
+`--run` accepts one or  more `--data` files, relations from every file are loaded into the same catalog, so a query can join across files
 
 ```
 python -m unittest discover -s tests
